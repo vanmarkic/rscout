@@ -1607,6 +1607,11 @@ function initializeFromURL(): boolean {
   renderResults(results, true);
   showSharePanel(true);
   updateURLStats();
+
+  // Extract and show suggestions for shared results too
+  const suggestions = extractSuggestions(results, state.q || '');
+  renderSuggestions(suggestions, state.q || '');
+
   setStatus(`Viewing shared results for "${state.q}"`, 'ready');
 
   return true;

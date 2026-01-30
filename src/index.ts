@@ -9,11 +9,12 @@ import { loadConfig, mergeConfigWithCLI } from './config/loader.js';
 import type { Config } from './config/schema.js';
 import { DuckDuckGoProvider, BraveProvider, RSSProvider, SerpProvider } from './providers/index.js';
 import type { Provider, ProviderName, SearchOptions, AggregatedResults } from './providers/types.js';
-import { Fetcher, Deduplicator, Scorer, Categorizer } from './pipeline/index.js';
+import { Fetcher, Deduplicator, Scorer, Categorizer, QueryRefiner, formatSuggestionsForDisplay } from './pipeline/index.js';
 import { MarkdownGenerator, JsonGenerator } from './output/index.js';
 import { FileCache } from './utils/cache.js';
 import { RateLimiter } from './utils/rate-limiter.js';
-import { logger, createChildLogger } from './utils/logger.js';
+import { createChildLogger } from './utils/logger.js';
+import { runInteractiveSearch } from './interactive.js';
 
 const cliLogger = createChildLogger('cli');
 
@@ -170,6 +171,136 @@ program
 
     } catch (error) {
       cliLogger.error({ error }, 'Status check failed');
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+// Interactive command
+program
+  .command('interactive')
+  .alias('i')
+  .description('Interactive search with progressive refinement')
+  .argument('<query>', 'Initial search query')
+  .option('-d, --depth <number>', 'Maximum refinement depth', '3')
+  .option('-l, --limit <number>', 'Results per search round', '10')
+  .option('-f, --format <format>', 'Output format: markdown or json', 'markdown')
+  .option('-o, --output <path>', 'Output file path (for final export)')
+  .option('-c, --config <path>', 'Path to config file')
+  .action(async (query: string, options) => {
+    try {
+      const config = await loadConfig(options.config);
+
+      const result = await runInteractiveSearch({
+        initialQuery: query,
+        config,
+        maxDepth: options.depth ? parseInt(options.depth, 10) : 3,
+        resultsPerRound: options.limit ? parseInt(options.limit, 10) : 10,
+        outputFormat: options.format as 'markdown' | 'json',
+      });
+
+      // If output path specified, write results
+      if (options.output) {
+        const output = await generateOutput(result, query, config, {
+          format: options.format as 'markdown' | 'json',
+        });
+        const outputPath = resolveOutputPath(options.output, config);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, output);
+        console.log(`\nResults written to: ${outputPath}`);
+      }
+
+      cliLogger.info({
+        query,
+        results: result.totalResults,
+        providers: result.providers,
+      }, 'Interactive search complete');
+
+    } catch (error) {
+      cliLogger.error({ error }, 'Interactive search failed');
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+// Refine command - single round refinement with suggestions
+program
+  .command('refine')
+  .description('Get refinement suggestions for a query based on initial results')
+  .argument('<query>', 'Search query')
+  .option('-l, --limit <number>', 'Number of results to analyze', '20')
+  .option('-s, --suggestions <number>', 'Number of suggestions to show', '10')
+  .option('-c, --config <path>', 'Path to config file')
+  .option('--json', 'Output suggestions as JSON')
+  .action(async (query: string, options) => {
+    try {
+      const config = await loadConfig(options.config);
+      const mergedConfig = mergeConfigWithCLI(config, {
+        limit: options.limit ? parseInt(options.limit, 10) : 20,
+      });
+
+      console.log(`Searching for "${query}" to generate refinement suggestions...\n`);
+
+      const result = await executeSearch(query, mergedConfig, {
+        cacheEnabled: true,
+      });
+
+      if (result.totalResults === 0) {
+        console.log('No results found. Cannot generate refinement suggestions.');
+        process.exit(1);
+      }
+
+      console.log(`Analyzed ${result.totalResults} results.\n`);
+
+      const refiner = new QueryRefiner(query, {
+        maxSuggestions: options.suggestions ? parseInt(options.suggestions, 10) : 10,
+        excludeOriginalTerms: true,
+        includeNgrams: true,
+      });
+
+      const suggestions = refiner.extractSuggestions(result.results);
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          query,
+          results: result.totalResults,
+          suggestions: suggestions.map(s => ({
+            term: s.term,
+            score: Math.round(s.score * 100) / 100,
+            source: s.source,
+            frequency: s.frequency,
+          })),
+          refinedQueries: {
+            expand: refiner.buildRefinedQueries(suggestions.slice(0, 3).map(s => s.term), 'expand'),
+            narrow: refiner.buildRefinedQueries(suggestions.slice(0, 3).map(s => s.term), 'narrow'),
+            pivot: refiner.buildRefinedQueries(suggestions.slice(0, 3).map(s => s.term), 'pivot'),
+          },
+        }, null, 2));
+      } else {
+        console.log(formatSuggestionsForDisplay(suggestions));
+
+        // Show example refined queries
+        const topTerms = suggestions.slice(0, 3).map(s => s.term);
+        if (topTerms.length > 0) {
+          console.log('Example refined queries:\n');
+          console.log('  Expand (broaden search):');
+          refiner.buildRefinedQueries(topTerms, 'expand').slice(0, 2).forEach(q => {
+            console.log(`    rscout search "${q}"`);
+          });
+          console.log('\n  Narrow (focus search):');
+          refiner.buildRefinedQueries(topTerms, 'narrow').slice(0, 2).forEach(q => {
+            console.log(`    rscout search "${q}"`);
+          });
+          console.log('\n  Pivot (new direction):');
+          refiner.buildRefinedQueries(topTerms, 'pivot').slice(0, 2).forEach(q => {
+            console.log(`    rscout search "${q}"`);
+          });
+          console.log('');
+        }
+      }
+
+    } catch (error) {
+      cliLogger.error({ error }, 'Refinement failed');
       console.error('Error:', error instanceof Error ? error.message : error);
       process.exit(1);
     }

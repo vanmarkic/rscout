@@ -5,6 +5,8 @@ A lightweight, no-AI web resource finder and aggregator CLI tool. Query multiple
 ## Features
 
 - **Multiple Search Providers**: DuckDuckGo (no API key), Brave Search, SerpAPI, and RSS feeds
+- **Interactive Search**: Progressive refinement with user input in the loop
+- **Query Refinement**: Automatic term extraction and suggestion generation
 - **Smart Deduplication**: URL normalization and content fingerprinting
 - **Relevance Scoring**: TF-IDF-lite scoring with recency and domain authority weights
 - **Obsidian Integration**: YAML frontmatter, backlinks, and customizable tags
@@ -36,6 +38,12 @@ pnpm rscout search "TypeScript design patterns" --limit 20
 
 # Output to a file
 pnpm rscout search "Belgian cohousing regulations" --output ./research/cohousing.md
+
+# Interactive search with progressive refinement
+pnpm rscout interactive "machine learning frameworks"
+
+# Get refinement suggestions for a query
+pnpm rscout refine "react state management"
 
 # Check provider status
 pnpm rscout status
@@ -115,6 +123,70 @@ Options:
   -l, --limit <number>   Maximum results
   -o, --output <path>    Output file path
   -f, --format <type>    Output format
+```
+
+### Interactive Search
+
+Progressive search refinement with user input in the loop:
+
+```bash
+rscout interactive <query> [options]
+rscout i <query>  # alias
+
+Options:
+  -d, --depth <number>   Maximum refinement depth (default: 3)
+  -l, --limit <number>   Results per search round (default: 10)
+  -f, --format <type>    Output format: markdown or json
+  -o, --output <path>    Output file for final export
+  -c, --config <path>    Config file path
+```
+
+**Interactive Commands:**
+- `[number]` - Select a suggestion by number
+- `[numbers]` - Select multiple (e.g., "1,3,5" or "1-3")
+- `/add <term>` - Add custom search term
+- `/query <q>` - Start fresh with new query
+- `/expand` - Expand search with selected terms (OR-like)
+- `/narrow` - Narrow search with selected terms (AND-like)
+- `/pivot` - Pivot to new direction using selected terms
+- `/results` - Show current aggregated results
+- `/export` - Export results and exit
+- `/done` - Finish and return results
+- `/quit` - Exit without saving
+
+### Refine (Single Round)
+
+Get refinement suggestions without entering interactive mode:
+
+```bash
+rscout refine <query> [options]
+
+Options:
+  -l, --limit <number>       Results to analyze (default: 20)
+  -s, --suggestions <number> Number of suggestions (default: 10)
+  -c, --config <path>        Config file path
+  --json                     Output as JSON
+```
+
+Example output:
+```
+Suggested refinements:
+
+   1. framework                 ████████░░ (title)
+   2. patterns                  ███████░░░ (combined)
+   3. design patterns           ██████░░░░ (combined)
+
+Example refined queries:
+
+  Expand (broaden search):
+    rscout search "typescript framework"
+    rscout search "typescript patterns"
+
+  Narrow (focus search):
+    rscout search "\"typescript\" \"framework\""
+
+  Pivot (new direction):
+    rscout search "framework"
 ```
 
 ### Cache Management

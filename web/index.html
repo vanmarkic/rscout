@@ -269,6 +269,235 @@
       color: var(--text-muted);
     }
 
+    /* Result card header with save button */
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .save-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.25rem 0.5rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .save-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .save-btn.saved {
+      color: var(--warning);
+      border-color: var(--warning);
+    }
+
+    /* Share panel */
+    .share-panel {
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .share-panel .share-label {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .share-panel button {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+    }
+
+    .share-panel .btn-secondary {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .share-panel .btn-secondary:hover {
+      border-color: var(--accent);
+    }
+
+    /* Saved results panel */
+    .saved-panel {
+      margin-top: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-secondary);
+    }
+
+    .saved-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .saved-header h3 {
+      font-size: 0.95rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .saved-header .saved-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .saved-header button {
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      background: var(--bg);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .saved-header button:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .saved-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .saved-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
+    }
+
+    .saved-item:last-child {
+      border-bottom: none;
+    }
+
+    .saved-item:hover {
+      background: rgba(88, 166, 255, 0.05);
+    }
+
+    .saved-item-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .saved-item-content a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .saved-item-content a:hover {
+      text-decoration: underline;
+    }
+
+    .saved-item-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .remove-saved-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      font-size: 1.1rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .remove-saved-btn:hover {
+      color: #f85149;
+      background: rgba(248, 81, 73, 0.1);
+    }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* Sync info */
+    .sync-info {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      padding: 0.75rem 1rem;
+      background: rgba(88, 166, 255, 0.08);
+      border-top: 1px solid var(--border);
+    }
+
+    .sync-info strong {
+      color: var(--accent);
+    }
+
+    /* URL and export stats */
+    .url-stats, .export-stats {
+      font-size: 0.8rem;
+      font-family: monospace;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+
+    .export-stats {
+      display: block;
+      margin-top: 0.5rem;
+    }
+
+    /* Export button */
+    .export-btn {
+      background: var(--accent) !important;
+      color: var(--bg) !important;
+      border: none !important;
+    }
+
+    .export-btn:hover {
+      background: var(--accent-hover) !important;
+    }
+
     .footer {
       margin-top: 3rem;
       text-align: center;
@@ -332,6 +561,13 @@
       <span>✓</span> Ready to search
     </div>
 
+    <div id="share-panel" class="share-panel">
+      <span class="share-label">Results encoded in URL - share this link:</span>
+      <button id="copy-link-btn">Copy Link</button>
+      <button id="clear-url-btn" class="btn-secondary">Clear</button>
+      <span id="url-stats" class="url-stats"></span>
+    </div>
+
     <div id="results" class="results">
       <div class="empty-state">
         <p>Enter a search query to find resources</p>
@@ -344,6 +580,23 @@
     <div id="suggestions" class="suggestions" style="display: none;">
       <h3>Refine your search</h3>
       <div class="suggestion-chips" id="suggestion-chips"></div>
+    </div>
+
+    <div id="saved-results" class="saved-panel">
+      <div class="saved-header">
+        <h3>Saved Results <span id="saved-count">(0)</span></h3>
+        <div class="saved-actions">
+          <button id="export-saved-btn" class="export-btn" title="Export as bookmark URL">Export</button>
+          <button id="toggle-saved">Hide Saved</button>
+          <button id="clear-all-saved">Clear All</button>
+        </div>
+      </div>
+      <div id="saved-list" class="saved-list"></div>
+      <div class="sync-info">
+        <strong>Bookmark Sync:</strong> Click "Export" to copy a URL containing all saved results.
+        Bookmark it to sync across devices! Opening the bookmark imports results.
+        <span id="export-stats" class="export-stats"></span>
+      </div>
     </div>
 
     <footer class="footer">

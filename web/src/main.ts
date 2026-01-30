@@ -1,6 +1,653 @@
 // rscout Web - Browser-based resource aggregator
 // All processing happens locally in the browser
 
+// ============================================
+// LZ-String Compression (for URL-safe encoding)
+// Based on lz-string by pieroxy - MIT License
+// ============================================
+
+const LZString = (() => {
+  const keyStrUriSafe = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$';
+  const baseReverseDic: Record<string, Record<string, number>> = {};
+
+  function getBaseValue(alphabet: string, character: string): number {
+    if (!baseReverseDic[alphabet]) {
+      baseReverseDic[alphabet] = {};
+      for (let i = 0; i < alphabet.length; i++) {
+        baseReverseDic[alphabet][alphabet.charAt(i)] = i;
+      }
+    }
+    return baseReverseDic[alphabet][character];
+  }
+
+  function compressToEncodedURIComponent(input: string | null): string {
+    if (input == null) return '';
+    return _compress(input, 6, (a) => keyStrUriSafe.charAt(a));
+  }
+
+  function decompressFromEncodedURIComponent(input: string | null): string | null {
+    if (input == null) return '';
+    if (input === '') return null;
+    input = input.replace(/ /g, '+');
+    return _decompress(input.length, 32, (index) => getBaseValue(keyStrUriSafe, input!.charAt(index)));
+  }
+
+  function _compress(uncompressed: string, bitsPerChar: number, getCharFromInt: (a: number) => string): string {
+    let i: number, value: number;
+    const context_dictionary: Record<string, number> = {};
+    const context_dictionaryToCreate: Record<string, boolean> = {};
+    let context_c = '';
+    let context_wc = '';
+    let context_w = '';
+    let context_enlargeIn = 2;
+    let context_dictSize = 3;
+    let context_numBits = 2;
+    let context_data: string[] = [];
+    let context_data_val = 0;
+    let context_data_position = 0;
+
+    for (let ii = 0; ii < uncompressed.length; ii++) {
+      context_c = uncompressed.charAt(ii);
+      if (!Object.prototype.hasOwnProperty.call(context_dictionary, context_c)) {
+        context_dictionary[context_c] = context_dictSize++;
+        context_dictionaryToCreate[context_c] = true;
+      }
+
+      context_wc = context_w + context_c;
+      if (Object.prototype.hasOwnProperty.call(context_dictionary, context_wc)) {
+        context_w = context_wc;
+      } else {
+        if (Object.prototype.hasOwnProperty.call(context_dictionaryToCreate, context_w)) {
+          if (context_w.charCodeAt(0) < 256) {
+            for (i = 0; i < context_numBits; i++) {
+              context_data_val = context_data_val << 1;
+              if (context_data_position === bitsPerChar - 1) {
+                context_data_position = 0;
+                context_data.push(getCharFromInt(context_data_val));
+                context_data_val = 0;
+              } else {
+                context_data_position++;
+              }
+            }
+            value = context_w.charCodeAt(0);
+            for (i = 0; i < 8; i++) {
+              context_data_val = (context_data_val << 1) | (value & 1);
+              if (context_data_position === bitsPerChar - 1) {
+                context_data_position = 0;
+                context_data.push(getCharFromInt(context_data_val));
+                context_data_val = 0;
+              } else {
+                context_data_position++;
+              }
+              value = value >> 1;
+            }
+          } else {
+            value = 1;
+            for (i = 0; i < context_numBits; i++) {
+              context_data_val = (context_data_val << 1) | value;
+              if (context_data_position === bitsPerChar - 1) {
+                context_data_position = 0;
+                context_data.push(getCharFromInt(context_data_val));
+                context_data_val = 0;
+              } else {
+                context_data_position++;
+              }
+              value = 0;
+            }
+            value = context_w.charCodeAt(0);
+            for (i = 0; i < 16; i++) {
+              context_data_val = (context_data_val << 1) | (value & 1);
+              if (context_data_position === bitsPerChar - 1) {
+                context_data_position = 0;
+                context_data.push(getCharFromInt(context_data_val));
+                context_data_val = 0;
+              } else {
+                context_data_position++;
+              }
+              value = value >> 1;
+            }
+          }
+          context_enlargeIn--;
+          if (context_enlargeIn === 0) {
+            context_enlargeIn = Math.pow(2, context_numBits);
+            context_numBits++;
+          }
+          delete context_dictionaryToCreate[context_w];
+        } else {
+          value = context_dictionary[context_w];
+          for (i = 0; i < context_numBits; i++) {
+            context_data_val = (context_data_val << 1) | (value & 1);
+            if (context_data_position === bitsPerChar - 1) {
+              context_data_position = 0;
+              context_data.push(getCharFromInt(context_data_val));
+              context_data_val = 0;
+            } else {
+              context_data_position++;
+            }
+            value = value >> 1;
+          }
+        }
+        context_enlargeIn--;
+        if (context_enlargeIn === 0) {
+          context_enlargeIn = Math.pow(2, context_numBits);
+          context_numBits++;
+        }
+        context_dictionary[context_wc] = context_dictSize++;
+        context_w = String(context_c);
+      }
+    }
+
+    if (context_w !== '') {
+      if (Object.prototype.hasOwnProperty.call(context_dictionaryToCreate, context_w)) {
+        if (context_w.charCodeAt(0) < 256) {
+          for (i = 0; i < context_numBits; i++) {
+            context_data_val = context_data_val << 1;
+            if (context_data_position === bitsPerChar - 1) {
+              context_data_position = 0;
+              context_data.push(getCharFromInt(context_data_val));
+              context_data_val = 0;
+            } else {
+              context_data_position++;
+            }
+          }
+          value = context_w.charCodeAt(0);
+          for (i = 0; i < 8; i++) {
+            context_data_val = (context_data_val << 1) | (value & 1);
+            if (context_data_position === bitsPerChar - 1) {
+              context_data_position = 0;
+              context_data.push(getCharFromInt(context_data_val));
+              context_data_val = 0;
+            } else {
+              context_data_position++;
+            }
+            value = value >> 1;
+          }
+        } else {
+          value = 1;
+          for (i = 0; i < context_numBits; i++) {
+            context_data_val = (context_data_val << 1) | value;
+            if (context_data_position === bitsPerChar - 1) {
+              context_data_position = 0;
+              context_data.push(getCharFromInt(context_data_val));
+              context_data_val = 0;
+            } else {
+              context_data_position++;
+            }
+            value = 0;
+          }
+          value = context_w.charCodeAt(0);
+          for (i = 0; i < 16; i++) {
+            context_data_val = (context_data_val << 1) | (value & 1);
+            if (context_data_position === bitsPerChar - 1) {
+              context_data_position = 0;
+              context_data.push(getCharFromInt(context_data_val));
+              context_data_val = 0;
+            } else {
+              context_data_position++;
+            }
+            value = value >> 1;
+          }
+        }
+        context_enlargeIn--;
+        if (context_enlargeIn === 0) {
+          context_enlargeIn = Math.pow(2, context_numBits);
+          context_numBits++;
+        }
+        delete context_dictionaryToCreate[context_w];
+      } else {
+        value = context_dictionary[context_w];
+        for (i = 0; i < context_numBits; i++) {
+          context_data_val = (context_data_val << 1) | (value & 1);
+          if (context_data_position === bitsPerChar - 1) {
+            context_data_position = 0;
+            context_data.push(getCharFromInt(context_data_val));
+            context_data_val = 0;
+          } else {
+            context_data_position++;
+          }
+          value = value >> 1;
+        }
+      }
+      context_enlargeIn--;
+      if (context_enlargeIn === 0) {
+        context_numBits++;
+      }
+    }
+
+    value = 2;
+    for (i = 0; i < context_numBits; i++) {
+      context_data_val = (context_data_val << 1) | (value & 1);
+      if (context_data_position === bitsPerChar - 1) {
+        context_data_position = 0;
+        context_data.push(getCharFromInt(context_data_val));
+        context_data_val = 0;
+      } else {
+        context_data_position++;
+      }
+      value = value >> 1;
+    }
+
+    while (true) {
+      context_data_val = context_data_val << 1;
+      if (context_data_position === bitsPerChar - 1) {
+        context_data.push(getCharFromInt(context_data_val));
+        break;
+      } else context_data_position++;
+    }
+    return context_data.join('');
+  }
+
+  function _decompress(length: number, resetValue: number, getNextValue: (index: number) => number): string | null {
+    const dictionary: string[] = [];
+    let enlargeIn = 4;
+    let dictSize = 4;
+    let numBits = 3;
+    let entry = '';
+    const result: string[] = [];
+    let w: string;
+    let c: string | number;
+    let bits: number, resb: number, maxpower: number, power: number;
+    const data = { val: getNextValue(0), position: resetValue, index: 1 };
+
+    for (let i = 0; i < 3; i++) {
+      dictionary[i] = String(i);
+    }
+
+    bits = 0;
+    maxpower = Math.pow(2, 2);
+    power = 1;
+    while (power !== maxpower) {
+      resb = data.val & data.position;
+      data.position >>= 1;
+      if (data.position === 0) {
+        data.position = resetValue;
+        data.val = getNextValue(data.index++);
+      }
+      bits |= (resb > 0 ? 1 : 0) * power;
+      power <<= 1;
+    }
+
+    const next = bits;
+    switch (next) {
+      case 0:
+        bits = 0;
+        maxpower = Math.pow(2, 8);
+        power = 1;
+        while (power !== maxpower) {
+          resb = data.val & data.position;
+          data.position >>= 1;
+          if (data.position === 0) {
+            data.position = resetValue;
+            data.val = getNextValue(data.index++);
+          }
+          bits |= (resb > 0 ? 1 : 0) * power;
+          power <<= 1;
+        }
+        c = String.fromCharCode(bits);
+        break;
+      case 1:
+        bits = 0;
+        maxpower = Math.pow(2, 16);
+        power = 1;
+        while (power !== maxpower) {
+          resb = data.val & data.position;
+          data.position >>= 1;
+          if (data.position === 0) {
+            data.position = resetValue;
+            data.val = getNextValue(data.index++);
+          }
+          bits |= (resb > 0 ? 1 : 0) * power;
+          power <<= 1;
+        }
+        c = String.fromCharCode(bits);
+        break;
+      case 2:
+        return '';
+    }
+    dictionary[3] = c as string;
+    w = c as string;
+    result.push(c as string);
+    while (true) {
+      if (data.index > length) {
+        return '';
+      }
+
+      bits = 0;
+      maxpower = Math.pow(2, numBits);
+      power = 1;
+      while (power !== maxpower) {
+        resb = data.val & data.position;
+        data.position >>= 1;
+        if (data.position === 0) {
+          data.position = resetValue;
+          data.val = getNextValue(data.index++);
+        }
+        bits |= (resb > 0 ? 1 : 0) * power;
+        power <<= 1;
+      }
+
+      switch ((c = bits)) {
+        case 0:
+          bits = 0;
+          maxpower = Math.pow(2, 8);
+          power = 1;
+          while (power !== maxpower) {
+            resb = data.val & data.position;
+            data.position >>= 1;
+            if (data.position === 0) {
+              data.position = resetValue;
+              data.val = getNextValue(data.index++);
+            }
+            bits |= (resb > 0 ? 1 : 0) * power;
+            power <<= 1;
+          }
+
+          dictionary[dictSize++] = String.fromCharCode(bits);
+          c = dictSize - 1;
+          enlargeIn--;
+          break;
+        case 1:
+          bits = 0;
+          maxpower = Math.pow(2, 16);
+          power = 1;
+          while (power !== maxpower) {
+            resb = data.val & data.position;
+            data.position >>= 1;
+            if (data.position === 0) {
+              data.position = resetValue;
+              data.val = getNextValue(data.index++);
+            }
+            bits |= (resb > 0 ? 1 : 0) * power;
+            power <<= 1;
+          }
+          dictionary[dictSize++] = String.fromCharCode(bits);
+          c = dictSize - 1;
+          enlargeIn--;
+          break;
+        case 2:
+          return result.join('');
+      }
+
+      if (enlargeIn === 0) {
+        enlargeIn = Math.pow(2, numBits);
+        numBits++;
+      }
+
+      if (dictionary[c]) {
+        entry = dictionary[c];
+      } else {
+        if (c === dictSize) {
+          entry = w + w.charAt(0);
+        } else {
+          return null;
+        }
+      }
+      result.push(entry);
+
+      dictionary[dictSize++] = w + entry.charAt(0);
+      enlargeIn--;
+
+      if (enlargeIn === 0) {
+        enlargeIn = Math.pow(2, numBits);
+        numBits++;
+      }
+
+      w = entry;
+    }
+  }
+
+  return {
+    compressToEncodedURIComponent,
+    decompressFromEncodedURIComponent,
+  };
+})();
+
+// ============================================
+// Shareable State & URL Management
+// ============================================
+
+interface ShareableState {
+  q: string;  // query
+  s: string;  // scoring method
+  r: ShareableResult[];  // results
+}
+
+interface ShareableResult {
+  u: string;  // url
+  t: string;  // title
+  n: string;  // snippet
+  c: string;  // source
+  p: number;  // score (percentage)
+}
+
+function encodeStateToURL(query: string, scoring: string, results: SearchResult[]): string {
+  const state: ShareableState = {
+    q: query,
+    s: scoring,
+    r: results.map(r => ({
+      u: r.url,
+      t: r.title,
+      n: r.snippet.slice(0, 150),  // Truncate for URL size
+      c: r.source,
+      p: Math.round((r.score ?? r.bm25Score ?? r.similarity ?? 0) * 100),
+    })),
+  };
+  const json = JSON.stringify(state);
+  const compressed = LZString.compressToEncodedURIComponent(json);
+  return compressed;
+}
+
+function decodeStateFromURL(hash: string): ShareableState | null {
+  try {
+    const decompressed = LZString.decompressFromEncodedURIComponent(hash);
+    if (!decompressed) return null;
+    return JSON.parse(decompressed) as ShareableState;
+  } catch (e) {
+    console.error('Failed to decode URL state:', e);
+    return null;
+  }
+}
+
+function updateURLWithResults(query: string, scoring: string, results: SearchResult[]): void {
+  if (results.length === 0) return;
+  const encoded = encodeStateToURL(query, scoring, results);
+  const newURL = `${window.location.pathname}#${encoded}`;
+  window.history.replaceState(null, '', newURL);
+  updateURLStats();
+}
+
+function updateURLStats(): void {
+  const statsEl = document.getElementById('url-stats');
+  if (!statsEl) return;
+
+  const hash = window.location.hash;
+  const bytes = new Blob([hash]).size;
+  const kb = (bytes / 1024).toFixed(1);
+
+  // Color code based on size
+  let color = 'var(--success)';  // Green < 8KB
+  if (bytes > 32000) color = '#f85149';  // Red > 32KB (risky)
+  else if (bytes > 16000) color = 'var(--warning)';  // Yellow > 16KB
+
+  statsEl.innerHTML = `<span style="color: ${color}">${kb}KB</span> / 32KB`;
+  statsEl.title = `${bytes.toLocaleString()} bytes in URL hash`;
+}
+
+// ============================================
+// Bookmark Export/Import (Abuse bookmarks as sync!)
+// ============================================
+
+interface BookmarkExport {
+  v: number;  // version
+  t: string;  // type: 'saved' | 'search'
+  d: string;  // date exported
+  s: SavedResult[] | ShareableResult[];
+}
+
+function exportSavedToBookmarkURL(): string {
+  const saved = getSavedResults();
+  if (saved.length === 0) {
+    showToast('No saved results to export');
+    return '';
+  }
+
+  // Compress saved results into minimal format
+  const exportData: BookmarkExport = {
+    v: 1,
+    t: 'saved',
+    d: new Date().toISOString().slice(0, 10),
+    s: saved.map(r => ({
+      u: r.url,
+      t: r.title,
+      n: r.snippet.slice(0, 100),
+      c: r.source,
+      p: 0,
+    })),
+  };
+
+  const json = JSON.stringify(exportData);
+  const compressed = LZString.compressToEncodedURIComponent(json);
+  const url = `${window.location.origin}${window.location.pathname}#import:${compressed}`;
+
+  // Show stats
+  const bytes = new Blob([url]).size;
+  const kb = (bytes / 1024).toFixed(1);
+  showToast(`Exported ${saved.length} results (${kb}KB)`);
+
+  return url;
+}
+
+function importFromBookmarkURL(hash: string): boolean {
+  if (!hash.startsWith('import:')) return false;
+
+  try {
+    const compressed = hash.slice(7);  // Remove 'import:' prefix
+    const json = LZString.decompressFromEncodedURIComponent(compressed);
+    if (!json) throw new Error('Decompression failed');
+
+    const data = JSON.parse(json) as BookmarkExport;
+
+    if (data.t === 'saved' && Array.isArray(data.s)) {
+      let imported = 0;
+      for (const r of data.s) {
+        const result: SearchResult = {
+          url: (r as ShareableResult).u,
+          title: (r as ShareableResult).t,
+          snippet: (r as ShareableResult).n,
+          source: (r as ShareableResult).c,
+          timestamp: new Date(),
+          score: 0,
+        };
+
+        if (!isResultSaved(result.url)) {
+          saveResult(result);
+          imported++;
+        }
+      }
+
+      showToast(`Imported ${imported} new results (${data.s.length - imported} duplicates)`);
+      renderSavedResults();
+      if (currentResults.length > 0) {
+        renderResults(currentResults);
+      }
+
+      // Clear the import hash
+      window.history.replaceState(null, '', window.location.pathname);
+      return true;
+    }
+  } catch (e) {
+    console.error('Import failed:', e);
+    showToast('Failed to import - invalid bookmark URL');
+  }
+
+  return false;
+}
+
+function getExportStats(): { count: number; estimatedKB: number; maxResults: number } {
+  const saved = getSavedResults();
+
+  // Estimate compressed size
+  const sample = saved.slice(0, 10);
+  const sampleJSON = JSON.stringify(sample.map(r => ({
+    u: r.url, t: r.title, n: r.snippet.slice(0, 100), c: r.source, p: 0,
+  })));
+  const sampleCompressed = LZString.compressToEncodedURIComponent(sampleJSON);
+  const bytesPerResult = sample.length > 0 ? sampleCompressed.length / sample.length : 150;
+
+  const estimatedBytes = saved.length * bytesPerResult + 100;  // +100 for overhead
+  const maxResults = Math.floor(30000 / bytesPerResult);  // 30KB safe limit
+
+  return {
+    count: saved.length,
+    estimatedKB: estimatedBytes / 1024,
+    maxResults,
+  };
+}
+
+function getStateFromURL(): ShareableState | null {
+  const hash = window.location.hash.slice(1);  // Remove #
+  if (!hash) return null;
+  return decodeStateFromURL(hash);
+}
+
+// ============================================
+// Local Storage for Saved Results
+// ============================================
+
+const SAVED_RESULTS_KEY = 'rscout_saved_results';
+
+interface SavedResult extends SearchResult {
+  savedAt: string;  // ISO date string
+  id: string;  // unique identifier
+}
+
+function getSavedResults(): SavedResult[] {
+  try {
+    const stored = localStorage.getItem(SAVED_RESULTS_KEY);
+    if (!stored) return [];
+    return JSON.parse(stored);
+  } catch (e) {
+    console.error('Failed to load saved results:', e);
+    return [];
+  }
+}
+
+function saveResult(result: SearchResult): SavedResult {
+  const saved = getSavedResults();
+  const newResult: SavedResult = {
+    ...result,
+    savedAt: new Date().toISOString(),
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  };
+
+  // Check if already saved (by URL)
+  if (saved.some(s => s.url === result.url)) {
+    return saved.find(s => s.url === result.url)!;
+  }
+
+  saved.unshift(newResult);  // Add to beginning
+  localStorage.setItem(SAVED_RESULTS_KEY, JSON.stringify(saved));
+  return newResult;
+}
+
+function removeSavedResult(id: string): void {
+  const saved = getSavedResults();
+  const filtered = saved.filter(r => r.id !== id);
+  localStorage.setItem(SAVED_RESULTS_KEY, JSON.stringify(filtered));
+}
+
+function isResultSaved(url: string): boolean {
+  return getSavedResults().some(s => s.url === url);
+}
+
+function clearAllSavedResults(): void {
+  localStorage.removeItem(SAVED_RESULTS_KEY);
+}
+
+// ============================================
+// Core Types
+// ============================================
+
 interface SearchResult {
   url: string;
   title: string;
@@ -640,7 +1287,12 @@ function setStatus(message: string, type: 'ready' | 'loading' | 'error' = 'ready
   }
 }
 
-function renderResults(results: SearchResult[]): void {
+// Store current results for save functionality
+let currentResults: SearchResult[] = [];
+
+function renderResults(results: SearchResult[], isSharedView: boolean = false): void {
+  currentResults = results;
+
   if (results.length === 0) {
     resultsDiv.innerHTML = `
       <div class="empty-state">
@@ -653,21 +1305,31 @@ function renderResults(results: SearchResult[]): void {
 
   const maxScore = Math.max(...results.map((r) => r.score ?? r.bm25Score ?? r.similarity ?? 0), 0.01);
 
-  resultsDiv.innerHTML = results.map((result) => {
+  resultsDiv.innerHTML = results.map((result, index) => {
     const score = result.score ?? result.bm25Score ?? result.similarity ?? 0;
     const normalizedScore = (score / maxScore) * 100;
+    const isSaved = isResultSaved(result.url);
 
     let domain = 'unknown';
     try {
       domain = new URL(result.url).hostname.replace('www.', '');
     } catch {}
 
+    // Escape HTML in title and snippet
+    const safeTitle = (result.title || 'Untitled').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeSnippet = result.snippet.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
     return `
-      <div class="result-card">
-        <div class="result-title">
-          <a href="${result.url}" target="_blank" rel="noopener">${result.title || 'Untitled'}</a>
+      <div class="result-card" data-index="${index}">
+        <div class="result-header">
+          <div class="result-title">
+            <a href="${result.url}" target="_blank" rel="noopener">${safeTitle}</a>
+          </div>
+          <button class="save-btn ${isSaved ? 'saved' : ''}" data-index="${index}" title="${isSaved ? 'Saved' : 'Save to collection'}">
+            ${isSaved ? '★' : '☆'}
+          </button>
         </div>
-        <div class="result-snippet">${result.snippet.slice(0, 200)}${result.snippet.length > 200 ? '...' : ''}</div>
+        <div class="result-snippet">${safeSnippet.slice(0, 200)}${safeSnippet.length > 200 ? '...' : ''}</div>
         <div class="result-meta">
           <span>
             <div class="score-bar"><div class="score-fill" style="width: ${normalizedScore}%"></div></div>
@@ -679,6 +1341,130 @@ function renderResults(results: SearchResult[]): void {
       </div>
     `;
   }).join('');
+
+  // Add click handlers for save buttons
+  resultsDiv.querySelectorAll('.save-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const index = parseInt((btn as HTMLElement).dataset.index || '0', 10);
+      const result = currentResults[index];
+      if (result) {
+        if (isResultSaved(result.url)) {
+          // Already saved, show feedback
+          showToast('Already saved to collection');
+        } else {
+          saveResult(result);
+          btn.classList.add('saved');
+          btn.innerHTML = '★';
+          btn.setAttribute('title', 'Saved');
+          showToast('Saved to collection');
+          renderSavedResults();
+        }
+      }
+    });
+  });
+}
+
+function showToast(message: string): void {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+function renderSavedResults(): void {
+  const savedDiv = document.getElementById('saved-results');
+  const savedListDiv = document.getElementById('saved-list');
+  const savedCountSpan = document.getElementById('saved-count');
+
+  if (!savedDiv || !savedListDiv || !savedCountSpan) return;
+
+  const saved = getSavedResults();
+  savedCountSpan.textContent = `(${saved.length})`;
+
+  // Update export stats whenever saved results change
+  updateExportStats();
+
+  if (saved.length === 0) {
+    savedListDiv.innerHTML = `
+      <div class="empty-state" style="padding: 1rem;">
+        <p style="font-size: 0.9rem;">No saved results yet</p>
+        <p style="margin-top: 0.25rem; font-size: 0.8rem;">Click ☆ on any result to save it</p>
+      </div>
+    `;
+    return;
+  }
+
+  savedListDiv.innerHTML = saved.map((result) => {
+    let domain = 'unknown';
+    try {
+      domain = new URL(result.url).hostname.replace('www.', '');
+    } catch {}
+
+    const savedDate = new Date(result.savedAt).toLocaleDateString();
+    const safeTitle = (result.title || 'Untitled').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    return `
+      <div class="saved-item" data-id="${result.id}">
+        <div class="saved-item-content">
+          <a href="${result.url}" target="_blank" rel="noopener">${safeTitle}</a>
+          <span class="saved-item-meta">${domain} • ${result.source} • ${savedDate}</span>
+        </div>
+        <button class="remove-saved-btn" data-id="${result.id}" title="Remove">×</button>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers for remove buttons
+  savedListDiv.querySelectorAll('.remove-saved-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.id;
+      if (id) {
+        removeSavedResult(id);
+        renderSavedResults();
+        // Re-render current results to update save button states
+        if (currentResults.length > 0) {
+          renderResults(currentResults);
+        }
+        showToast('Removed from collection');
+      }
+    });
+  });
+}
+
+function copyShareLink(): void {
+  const url = window.location.href;
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Link copied to clipboard!');
+  }).catch(() => {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = url;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    showToast('Link copied to clipboard!');
+  });
+}
+
+function showSharePanel(show: boolean): void {
+  const panel = document.getElementById('share-panel');
+  if (panel) {
+    panel.style.display = show ? 'flex' : 'none';
+  }
 }
 
 function renderSuggestions(suggestions: string[], query: string): void {
@@ -750,6 +1536,10 @@ async function performSearch(): Promise<void> {
     setStatus(`${results.length} results ranked with ${scoring.toUpperCase()}`, 'ready');
     renderResults(results);
     renderSuggestions(suggestions, query);
+
+    // Update URL with compressed results for sharing
+    updateURLWithResults(query, scoring, results);
+    showSharePanel(true);
   } catch (error) {
     console.error('Search error:', error);
     setStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
@@ -780,5 +1570,140 @@ scoringSelect.addEventListener('change', () => {
   }
 });
 
-// Initial state
-setStatus('Ready to search', 'ready');
+// ============================================
+// Initialization
+// ============================================
+
+function initializeFromURL(): boolean {
+  const hash = window.location.hash.slice(1);
+  if (!hash) return false;
+
+  // Check for import URL first
+  if (hash.startsWith('import:')) {
+    return importFromBookmarkURL(hash);
+  }
+
+  // Otherwise try to restore search results
+  const state = getStateFromURL();
+  if (!state || !state.r || state.r.length === 0) return false;
+
+  // Restore UI state
+  queryInput.value = state.q || '';
+  if (state.s && ['bm25', 'tfidf', 'semantic'].includes(state.s)) {
+    scoringSelect.value = state.s;
+  }
+
+  // Convert shareable results back to SearchResult format
+  const results: SearchResult[] = state.r.map((r) => ({
+    url: r.u,
+    title: r.t,
+    snippet: r.n,
+    source: r.c,
+    timestamp: new Date(),
+    score: r.p / 100,  // Convert percentage back to decimal
+  }));
+
+  // Render the shared results
+  renderResults(results, true);
+  showSharePanel(true);
+  updateURLStats();
+  setStatus(`Viewing shared results for "${state.q}"`, 'ready');
+
+  return true;
+}
+
+function setupSharePanel(): void {
+  const copyBtn = document.getElementById('copy-link-btn');
+  const clearUrlBtn = document.getElementById('clear-url-btn');
+
+  if (copyBtn) {
+    copyBtn.addEventListener('click', copyShareLink);
+  }
+
+  if (clearUrlBtn) {
+    clearUrlBtn.addEventListener('click', () => {
+      // Clear URL hash and hide share panel
+      window.history.replaceState(null, '', window.location.pathname);
+      showSharePanel(false);
+      showToast('Share link cleared');
+    });
+  }
+}
+
+function setupSavedResultsPanel(): void {
+  const toggleBtn = document.getElementById('toggle-saved');
+  const savedPanel = document.getElementById('saved-results');
+  const clearAllBtn = document.getElementById('clear-all-saved');
+  const exportBtn = document.getElementById('export-saved-btn');
+
+  if (toggleBtn && savedPanel) {
+    toggleBtn.addEventListener('click', () => {
+      const isVisible = savedPanel.style.display !== 'none';
+      savedPanel.style.display = isVisible ? 'none' : 'block';
+      toggleBtn.textContent = isVisible ? 'Show Saved' : 'Hide Saved';
+    });
+  }
+
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+      if (confirm('Clear all saved results? This cannot be undone.')) {
+        clearAllSavedResults();
+        renderSavedResults();
+        if (currentResults.length > 0) {
+          renderResults(currentResults);
+        }
+        showToast('All saved results cleared');
+      }
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const url = exportSavedToBookmarkURL();
+      if (url) {
+        // Copy to clipboard
+        navigator.clipboard.writeText(url).then(() => {
+          const stats = getExportStats();
+          showToast(`Bookmark URL copied! (${stats.estimatedKB.toFixed(1)}KB for ${stats.count} results)`);
+        }).catch(() => {
+          // Fallback: open prompt with URL
+          prompt('Bookmark this URL to sync your saved results:', url);
+        });
+      }
+    });
+  }
+
+  // Initial render
+  renderSavedResults();
+  updateExportStats();
+}
+
+function updateExportStats(): void {
+  const statsEl = document.getElementById('export-stats');
+  if (!statsEl) return;
+
+  const stats = getExportStats();
+  if (stats.count === 0) {
+    statsEl.textContent = '';
+    return;
+  }
+
+  const pct = Math.min(100, (stats.estimatedKB / 30) * 100);
+  let color = 'var(--success)';
+  if (pct > 90) color = '#f85149';
+  else if (pct > 60) color = 'var(--warning)';
+
+  statsEl.innerHTML = `
+    <span style="color: ${color}">${stats.estimatedKB.toFixed(1)}KB</span> / 30KB
+    (~${stats.maxResults} max results)
+  `;
+}
+
+// Initialize app
+const hasSharedState = initializeFromURL();
+setupSharePanel();
+setupSavedResultsPanel();
+
+if (!hasSharedState) {
+  setStatus('Ready to search', 'ready');
+}

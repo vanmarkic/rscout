@@ -8,7 +8,11 @@ A lightweight, no-AI web resource finder and aggregator CLI tool. Query multiple
 - **Interactive Search**: Progressive refinement with user input in the loop
 - **Query Refinement**: Automatic term extraction and suggestion generation
 - **Smart Deduplication**: URL normalization and content fingerprinting
-- **Relevance Scoring**: TF-IDF-lite scoring with recency and domain authority weights
+- **Advanced Scoring**: BM25 + TF-IDF hybrid scoring with recency and domain authority
+- **Local Semantic Search**: all-MiniLM-L6-v2 embeddings (FREE, runs locally, no API)
+- **Content Extraction**: Jina Reader integration for clean markdown from any URL
+- **Cloudflare Bypass**: FlareSolverr support for protected sites
+- **AST-Aware Chunking**: tree-sitter based code chunking that preserves structure
 - **Obsidian Integration**: YAML frontmatter, backlinks, and customizable tags
 - **Caching**: File-based result cache to reduce API calls
 - **Rate Limiting**: Per-provider rate limiting to respect API limits

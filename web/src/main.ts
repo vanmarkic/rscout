@@ -453,6 +453,135 @@ function updateURLWithResults(query: string, scoring: string, results: SearchRes
   const encoded = encodeStateToURL(query, scoring, results);
   const newURL = `${window.location.pathname}#${encoded}`;
   window.history.replaceState(null, '', newURL);
+  updateURLStats();
+}
+
+function updateURLStats(): void {
+  const statsEl = document.getElementById('url-stats');
+  if (!statsEl) return;
+
+  const hash = window.location.hash;
+  const bytes = new Blob([hash]).size;
+  const kb = (bytes / 1024).toFixed(1);
+
+  // Color code based on size
+  let color = 'var(--success)';  // Green < 8KB
+  if (bytes > 32000) color = '#f85149';  // Red > 32KB (risky)
+  else if (bytes > 16000) color = 'var(--warning)';  // Yellow > 16KB
+
+  statsEl.innerHTML = `<span style="color: ${color}">${kb}KB</span> / 32KB`;
+  statsEl.title = `${bytes.toLocaleString()} bytes in URL hash`;
+}
+
+// ============================================
+// Bookmark Export/Import (Abuse bookmarks as sync!)
+// ============================================
+
+interface BookmarkExport {
+  v: number;  // version
+  t: string;  // type: 'saved' | 'search'
+  d: string;  // date exported
+  s: SavedResult[] | ShareableResult[];
+}
+
+function exportSavedToBookmarkURL(): string {
+  const saved = getSavedResults();
+  if (saved.length === 0) {
+    showToast('No saved results to export');
+    return '';
+  }
+
+  // Compress saved results into minimal format
+  const exportData: BookmarkExport = {
+    v: 1,
+    t: 'saved',
+    d: new Date().toISOString().slice(0, 10),
+    s: saved.map(r => ({
+      u: r.url,
+      t: r.title,
+      n: r.snippet.slice(0, 100),
+      c: r.source,
+      p: 0,
+    })),
+  };
+
+  const json = JSON.stringify(exportData);
+  const compressed = LZString.compressToEncodedURIComponent(json);
+  const url = `${window.location.origin}${window.location.pathname}#import:${compressed}`;
+
+  // Show stats
+  const bytes = new Blob([url]).size;
+  const kb = (bytes / 1024).toFixed(1);
+  showToast(`Exported ${saved.length} results (${kb}KB)`);
+
+  return url;
+}
+
+function importFromBookmarkURL(hash: string): boolean {
+  if (!hash.startsWith('import:')) return false;
+
+  try {
+    const compressed = hash.slice(7);  // Remove 'import:' prefix
+    const json = LZString.decompressFromEncodedURIComponent(compressed);
+    if (!json) throw new Error('Decompression failed');
+
+    const data = JSON.parse(json) as BookmarkExport;
+
+    if (data.t === 'saved' && Array.isArray(data.s)) {
+      let imported = 0;
+      for (const r of data.s) {
+        const result: SearchResult = {
+          url: (r as ShareableResult).u,
+          title: (r as ShareableResult).t,
+          snippet: (r as ShareableResult).n,
+          source: (r as ShareableResult).c,
+          timestamp: new Date(),
+          score: 0,
+        };
+
+        if (!isResultSaved(result.url)) {
+          saveResult(result);
+          imported++;
+        }
+      }
+
+      showToast(`Imported ${imported} new results (${data.s.length - imported} duplicates)`);
+      renderSavedResults();
+      if (currentResults.length > 0) {
+        renderResults(currentResults);
+      }
+
+      // Clear the import hash
+      window.history.replaceState(null, '', window.location.pathname);
+      return true;
+    }
+  } catch (e) {
+    console.error('Import failed:', e);
+    showToast('Failed to import - invalid bookmark URL');
+  }
+
+  return false;
+}
+
+function getExportStats(): { count: number; estimatedKB: number; maxResults: number } {
+  const saved = getSavedResults();
+
+  // Estimate compressed size
+  const sample = saved.slice(0, 10);
+  const sampleJSON = JSON.stringify(sample.map(r => ({
+    u: r.url, t: r.title, n: r.snippet.slice(0, 100), c: r.source, p: 0,
+  })));
+  const sampleCompressed = LZString.compressToEncodedURIComponent(sampleJSON);
+  const bytesPerResult = sample.length > 0 ? sampleCompressed.length / sample.length : 150;
+
+  const estimatedBytes = saved.length * bytesPerResult + 100;  // +100 for overhead
+  const maxResults = Math.floor(30000 / bytesPerResult);  // 30KB safe limit
+
+  return {
+    count: saved.length,
+    estimatedKB: estimatedBytes / 1024,
+    maxResults,
+  };
 }
 
 function getStateFromURL(): ShareableState | null {
@@ -1263,6 +1392,9 @@ function renderSavedResults(): void {
   const saved = getSavedResults();
   savedCountSpan.textContent = `(${saved.length})`;
 
+  // Update export stats whenever saved results change
+  updateExportStats();
+
   if (saved.length === 0) {
     savedListDiv.innerHTML = `
       <div class="empty-state" style="padding: 1rem;">
@@ -1443,6 +1575,15 @@ scoringSelect.addEventListener('change', () => {
 // ============================================
 
 function initializeFromURL(): boolean {
+  const hash = window.location.hash.slice(1);
+  if (!hash) return false;
+
+  // Check for import URL first
+  if (hash.startsWith('import:')) {
+    return importFromBookmarkURL(hash);
+  }
+
+  // Otherwise try to restore search results
   const state = getStateFromURL();
   if (!state || !state.r || state.r.length === 0) return false;
 
@@ -1465,6 +1606,7 @@ function initializeFromURL(): boolean {
   // Render the shared results
   renderResults(results, true);
   showSharePanel(true);
+  updateURLStats();
   setStatus(`Viewing shared results for "${state.q}"`, 'ready');
 
   return true;
@@ -1492,6 +1634,7 @@ function setupSavedResultsPanel(): void {
   const toggleBtn = document.getElementById('toggle-saved');
   const savedPanel = document.getElementById('saved-results');
   const clearAllBtn = document.getElementById('clear-all-saved');
+  const exportBtn = document.getElementById('export-saved-btn');
 
   if (toggleBtn && savedPanel) {
     toggleBtn.addEventListener('click', () => {
@@ -1514,8 +1657,46 @@ function setupSavedResultsPanel(): void {
     });
   }
 
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const url = exportSavedToBookmarkURL();
+      if (url) {
+        // Copy to clipboard
+        navigator.clipboard.writeText(url).then(() => {
+          const stats = getExportStats();
+          showToast(`Bookmark URL copied! (${stats.estimatedKB.toFixed(1)}KB for ${stats.count} results)`);
+        }).catch(() => {
+          // Fallback: open prompt with URL
+          prompt('Bookmark this URL to sync your saved results:', url);
+        });
+      }
+    });
+  }
+
   // Initial render
   renderSavedResults();
+  updateExportStats();
+}
+
+function updateExportStats(): void {
+  const statsEl = document.getElementById('export-stats');
+  if (!statsEl) return;
+
+  const stats = getExportStats();
+  if (stats.count === 0) {
+    statsEl.textContent = '';
+    return;
+  }
+
+  const pct = Math.min(100, (stats.estimatedKB / 30) * 100);
+  let color = 'var(--success)';
+  if (pct > 90) color = '#f85149';
+  else if (pct > 60) color = 'var(--warning)';
+
+  statsEl.innerHTML = `
+    <span style="color: ${color}">${stats.estimatedKB.toFixed(1)}KB</span> / 30KB
+    (~${stats.maxResults} max results)
+  `;
 }
 
 // Initialize app

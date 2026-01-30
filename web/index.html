@@ -465,10 +465,37 @@
     .sync-info {
       font-size: 0.75rem;
       color: var(--text-muted);
+      padding: 0.75rem 1rem;
+      background: rgba(88, 166, 255, 0.08);
+      border-top: 1px solid var(--border);
+    }
+
+    .sync-info strong {
+      color: var(--accent);
+    }
+
+    /* URL and export stats */
+    .url-stats, .export-stats {
+      font-size: 0.8rem;
+      font-family: monospace;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+
+    .export-stats {
+      display: block;
       margin-top: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: rgba(210, 153, 34, 0.1);
-      border-radius: 4px;
+    }
+
+    /* Export button */
+    .export-btn {
+      background: var(--accent) !important;
+      color: var(--bg) !important;
+      border: none !important;
+    }
+
+    .export-btn:hover {
+      background: var(--accent-hover) !important;
     }
 
     .footer {
@@ -538,6 +565,7 @@
       <span class="share-label">Results encoded in URL - share this link:</span>
       <button id="copy-link-btn">Copy Link</button>
       <button id="clear-url-btn" class="btn-secondary">Clear</button>
+      <span id="url-stats" class="url-stats"></span>
     </div>
 
     <div id="results" class="results">
@@ -558,14 +586,16 @@
       <div class="saved-header">
         <h3>Saved Results <span id="saved-count">(0)</span></h3>
         <div class="saved-actions">
+          <button id="export-saved-btn" class="export-btn" title="Export as bookmark URL">Export</button>
           <button id="toggle-saved">Hide Saved</button>
           <button id="clear-all-saved">Clear All</button>
         </div>
       </div>
       <div id="saved-list" class="saved-list"></div>
       <div class="sync-info">
-        Saved results are stored locally in your browser. To sync across devices, use a browser extension
-        or export/import your bookmarks. Chrome/Brave sync does not sync localStorage.
+        <strong>Bookmark Sync:</strong> Click "Export" to copy a URL containing all saved results.
+        Bookmark it to sync across devices! Opening the bookmark imports results.
+        <span id="export-stats" class="export-stats"></span>
       </div>
     </div>
 

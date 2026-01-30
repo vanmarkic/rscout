@@ -498,6 +498,130 @@
       background: var(--accent-hover) !important;
     }
 
+    /* Settings panel */
+    .settings-panel {
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-secondary);
+    }
+
+    .settings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .settings-header:hover {
+      background: rgba(88, 166, 255, 0.05);
+    }
+
+    .settings-header h3 {
+      font-size: 0.95rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .settings-toggle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .settings-content {
+      display: none;
+      padding: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .settings-content.show {
+      display: block;
+    }
+
+    .setting-group {
+      margin-bottom: 1rem;
+    }
+
+    .setting-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .setting-group label {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+    }
+
+    .setting-group .setting-help {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    .setting-group input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .setting-row label {
+      margin-bottom: 0;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .setting-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+    }
+
+    .settings-info {
+      padding: 0.75rem;
+      background: rgba(88, 166, 255, 0.08);
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+
+    .settings-info code {
+      background: var(--bg);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .settings-actions button {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+    }
+
+    .btn-save {
+      background: var(--success);
+    }
+
+    .btn-save:hover {
+      background: #4eca61;
+    }
+
     .footer {
       margin-top: 3rem;
       text-align: center;
@@ -554,6 +678,46 @@
         <label>
           <input type="checkbox" id="use-embeddings"> Use local AI embeddings
         </label>
+      </div>
+    </div>
+
+    <div id="settings-panel" class="settings-panel">
+      <div class="settings-header" id="settings-header">
+        <h3>Search Sources</h3>
+        <span class="settings-toggle">Click to configure</span>
+      </div>
+      <div class="settings-content" id="settings-content">
+        <div class="setting-group">
+          <label for="proxy-url">Proxy URL (Cloudflare Worker)</label>
+          <input type="text" id="proxy-url" placeholder="https://your-worker.your-subdomain.workers.dev">
+          <p class="setting-help">Deploy a Cloudflare Worker to enable additional search sources</p>
+        </div>
+
+        <div class="setting-group">
+          <p style="font-size: 0.85rem; color: var(--text); margin-bottom: 0.5rem;">Enable proxy-based sources:</p>
+          <div class="setting-row">
+            <input type="checkbox" id="enable-proxy-sources">
+            <label for="enable-proxy-sources">SearXNG / DuckDuckGo (via proxy)</label>
+          </div>
+          <div class="setting-row">
+            <input type="checkbox" id="enable-brave-api">
+            <label for="enable-brave-api">Brave Search API (requires API key in worker)</label>
+          </div>
+          <div class="setting-row">
+            <input type="checkbox" id="enable-serp-api">
+            <label for="enable-serp-api">SerpAPI / Google (requires API key in worker)</label>
+          </div>
+        </div>
+
+        <div class="settings-info">
+          <strong>Default sources (always enabled):</strong> Wikipedia, Hacker News, Reddit, GitHub, StackOverflow, arXiv<br><br>
+          <strong>To enable more sources:</strong> Deploy the <code>cloudflare-worker.js</code> from the rscout repo, add your API keys as secrets, then paste the worker URL above.
+        </div>
+
+        <div class="settings-actions">
+          <button id="save-settings-btn" class="btn-save">Save Settings</button>
+          <button id="reset-settings-btn" class="btn-secondary">Reset</button>
+        </div>
       </div>
     </div>
 

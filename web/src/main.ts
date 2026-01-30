@@ -835,7 +835,45 @@ async function semanticScore(
 // Search APIs (Multiple sources for reliability)
 // ============================================
 
-// SearXNG public instances with JSON API
+// ============================================
+// Settings Management (localStorage)
+// ============================================
+
+const SETTINGS_KEY = 'rscout_settings';
+
+interface RscoutSettings {
+  proxyUrl: string;           // Cloudflare Worker or custom proxy URL
+  enableProxySources: boolean; // Enable SearXNG/DuckDuckGo via proxy
+  enableBraveApi: boolean;     // Enable Brave Search (requires proxy with API key)
+  enableSerpApi: boolean;      // Enable SerpAPI (requires proxy with API key)
+}
+
+function getSettings(): RscoutSettings {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY);
+    if (stored) {
+      return { ...getDefaultSettings(), ...JSON.parse(stored) };
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+  }
+  return getDefaultSettings();
+}
+
+function getDefaultSettings(): RscoutSettings {
+  return {
+    proxyUrl: '',
+    enableProxySources: false,  // Disabled by default - they fail without proxy
+    enableBraveApi: false,
+    enableSerpApi: false,
+  };
+}
+
+function saveSettings(settings: RscoutSettings): void {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// SearXNG public instances with JSON API (disabled by default)
 const SEARXNG_INSTANCES = [
   'https://searx.be',
   'https://search.bus-hit.me',
@@ -843,43 +881,46 @@ const SEARXNG_INSTANCES = [
   'https://search.ononoki.org',
 ];
 
-// CORS proxies for fallback
-const CORS_PROXIES = [
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
-  'https://api.codetabs.com/v1/proxy?quest=',
-];
+// Fetch via configured proxy (for non-CORS APIs)
+async function fetchViaProxy(url: string, options: RequestInit = {}): Promise<Response> {
+  const settings = getSettings();
 
-async function fetchWithCORS(url: string, options: RequestInit = {}): Promise<Response> {
-  // Try direct fetch first
-  try {
-    const response = await fetch(url, { ...options, mode: 'cors' });
-    if (response.ok) return response;
-  } catch (e) {
-    console.log('Direct fetch failed, trying proxies...', e);
+  if (!settings.proxyUrl) {
+    throw new Error('No proxy configured');
   }
 
-  // Try CORS proxies
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const proxyUrl = proxy + encodeURIComponent(url);
-      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-      if (response.ok) return response;
-    } catch (e) {
-      console.log(`Proxy ${proxy} failed`, e);
-      continue;
-    }
+  // Proxy expects: POST with { url, method, headers, body }
+  const proxyRequest = {
+    url,
+    method: options.method || 'GET',
+    headers: options.headers || {},
+  };
+
+  const response = await fetch(settings.proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(proxyRequest),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proxy request failed: ${response.status}`);
   }
 
-  throw new Error('All fetch attempts failed');
+  return response;
 }
 
-// Search using SearXNG (metasearch engine with JSON API)
+// Search using SearXNG (metasearch engine with JSON API) - REQUIRES PROXY
 async function searchSearXNG(query: string, limit: number): Promise<SearchResult[]> {
+  const settings = getSettings();
+  if (!settings.enableProxySources || !settings.proxyUrl) {
+    return []; // Disabled or no proxy configured
+  }
+
   for (const instance of SEARXNG_INSTANCES) {
     try {
       const url = `${instance}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
-      const response = await fetchWithCORS(url);
+      const response = await fetchViaProxy(url);
       const data = await response.json();
 
       if (data.results && data.results.length > 0) {
@@ -900,12 +941,17 @@ async function searchSearXNG(query: string, limit: number): Promise<SearchResult
   return [];
 }
 
-// Search using DuckDuckGo HTML (scraping approach)
+// Search using DuckDuckGo HTML (scraping approach) - REQUIRES PROXY
 async function searchDuckDuckGoHTML(query: string, limit: number): Promise<SearchResult[]> {
+  const settings = getSettings();
+  if (!settings.enableProxySources || !settings.proxyUrl) {
+    return []; // Disabled or no proxy configured
+  }
+
   try {
     // DuckDuckGo lite version is simpler to parse
     const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
-    const response = await fetchWithCORS(url);
+    const response = await fetchViaProxy(url);
     const html = await response.text();
 
     const results: SearchResult[] = [];
@@ -942,12 +988,19 @@ async function searchDuckDuckGoHTML(query: string, limit: number): Promise<Searc
   }
 }
 
-// Search using DuckDuckGo Instant Answer API (for instant answers)
+// Search using DuckDuckGo Instant Answer API (limited results, but works without proxy)
 async function searchDuckDuckGoAPI(query: string, limit: number): Promise<SearchResult[]> {
+  const settings = getSettings();
+  // This API has CORS support but only returns instant answers, not web results
+  // Only use if proxy sources are enabled (user expects general search)
+  if (!settings.enableProxySources) {
+    return [];
+  }
+
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
 
   try {
-    const response = await fetchWithCORS(url);
+    const response = await fetch(url); // Direct fetch works for this API
     const data = await response.json();
 
     const results: SearchResult[] = [];
@@ -1018,6 +1071,76 @@ async function searchDuckDuckGoAPI(query: string, limit: number): Promise<Search
     console.log('DuckDuckGo API failed', e);
     return [];
   }
+}
+
+// Search using Brave API - REQUIRES PROXY (API key stored in worker)
+async function searchBraveAPI(query: string, limit: number): Promise<SearchResult[]> {
+  const settings = getSettings();
+  if (!settings.enableBraveApi || !settings.proxyUrl) {
+    return [];
+  }
+
+  try {
+    // The proxy worker will add the API key
+    const response = await fetch(`${settings.proxyUrl}/brave?q=${encodeURIComponent(query)}&count=${limit}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.log('Brave API failed:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (data.web?.results) {
+      return data.web.results.slice(0, limit).map((r: any) => ({
+        url: r.url,
+        title: r.title || 'Untitled',
+        snippet: r.description || '',
+        source: 'brave',
+        timestamp: new Date(),
+      }));
+    }
+  } catch (e) {
+    console.log('Brave API search failed', e);
+  }
+  return [];
+}
+
+// Search using SerpAPI - REQUIRES PROXY (API key stored in worker)
+async function searchSerpAPI(query: string, limit: number): Promise<SearchResult[]> {
+  const settings = getSettings();
+  if (!settings.enableSerpApi || !settings.proxyUrl) {
+    return [];
+  }
+
+  try {
+    // The proxy worker will add the API key
+    const response = await fetch(`${settings.proxyUrl}/serp?q=${encodeURIComponent(query)}&num=${limit}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.log('SerpAPI failed:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (data.organic_results) {
+      return data.organic_results.slice(0, limit).map((r: any) => ({
+        url: r.link,
+        title: r.title || 'Untitled',
+        snippet: r.snippet || '',
+        source: 'serpapi',
+        timestamp: new Date(),
+      }));
+    }
+  } catch (e) {
+    console.log('SerpAPI search failed', e);
+  }
+  return [];
 }
 
 // ============================================
@@ -1186,41 +1309,88 @@ function decodeHtmlEntities(text: string): string {
 // Main search function - tries multiple sources
 async function search(query: string, limit: number, statusCallback: (msg: string) => void): Promise<SearchResult[]> {
   const allResults: SearchResult[] = [];
+  const settings = getSettings();
 
-  // Try SearXNG first (best general results)
-  statusCallback('Searching SearXNG...');
-  let results = await searchSearXNG(query, limit);
-  if (results.length > 0) {
-    allResults.push(...results);
+  // Build list of active sources for status display
+  const activeSources: string[] = [];
+
+  // 1. Try proxy-based primary sources (if configured)
+  if (settings.proxyUrl) {
+    // Try Brave API first (best quality if available)
+    if (settings.enableBraveApi) {
+      statusCallback('Searching Brave...');
+      const braveResults = await searchBraveAPI(query, limit);
+      if (braveResults.length > 0) {
+        allResults.push(...braveResults);
+        activeSources.push('Brave');
+      }
+    }
+
+    // Try SerpAPI (Google results)
+    if (settings.enableSerpApi) {
+      statusCallback('Searching SerpAPI...');
+      const serpResults = await searchSerpAPI(query, limit);
+      if (serpResults.length > 0) {
+        allResults.push(...serpResults);
+        activeSources.push('SerpAPI');
+      }
+    }
+
+    // Try SearXNG via proxy
+    if (settings.enableProxySources) {
+      statusCallback('Searching SearXNG...');
+      const searxResults = await searchSearXNG(query, limit);
+      if (searxResults.length > 0) {
+        allResults.push(...searxResults);
+        activeSources.push('SearXNG');
+      }
+
+      // Try DuckDuckGo via proxy if no results yet
+      if (allResults.length === 0) {
+        statusCallback('Trying DuckDuckGo...');
+        const ddgResults = await searchDuckDuckGoHTML(query, limit);
+        if (ddgResults.length > 0) {
+          allResults.push(...ddgResults);
+          activeSources.push('DuckDuckGo');
+        }
+      }
+
+      // Try DuckDuckGo Instant Answer API
+      if (allResults.length === 0) {
+        statusCallback('Trying DuckDuckGo API...');
+        const ddgApiResults = await searchDuckDuckGoAPI(query, limit);
+        if (ddgApiResults.length > 0) {
+          allResults.push(...ddgApiResults);
+          activeSources.push('DuckDuckGo');
+        }
+      }
+    }
   }
 
-  // If SearXNG failed, try DuckDuckGo
-  if (allResults.length === 0) {
-    statusCallback('Trying DuckDuckGo...');
-    results = await searchDuckDuckGoHTML(query, limit);
-    allResults.push(...results);
-  }
-
-  if (allResults.length === 0) {
-    statusCallback('Trying DuckDuckGo API...');
-    results = await searchDuckDuckGoAPI(query, limit);
-    allResults.push(...results);
-  }
-
-  // Always add results from CORS-friendly APIs in parallel
-  statusCallback('Searching Wikipedia, HN, GitHub...');
-  const [wikiResults, hnResults, ghResults, soResults, redditResults] = await Promise.all([
+  // 2. Always add results from CORS-friendly APIs in parallel (these always work!)
+  statusCallback('Searching Wikipedia, HN, Reddit, GitHub, SO, arXiv...');
+  const [wikiResults, hnResults, ghResults, soResults, redditResults, arxivResults] = await Promise.all([
     searchWikipedia(query, Math.min(limit, 5)),
     searchHackerNews(query, Math.min(limit, 5)),
     searchGitHub(query, Math.min(limit, 5)),
     searchStackOverflow(query, Math.min(limit, 5)),
     searchReddit(query, Math.min(limit, 5)),
+    searchArxiv(query, Math.min(limit, 3)),
   ]);
 
-  allResults.push(...wikiResults, ...hnResults, ...ghResults, ...soResults, ...redditResults);
+  if (wikiResults.length > 0) activeSources.push('Wikipedia');
+  if (hnResults.length > 0) activeSources.push('HN');
+  if (ghResults.length > 0) activeSources.push('GitHub');
+  if (soResults.length > 0) activeSources.push('SO');
+  if (redditResults.length > 0) activeSources.push('Reddit');
+  if (arxivResults.length > 0) activeSources.push('arXiv');
+
+  allResults.push(...wikiResults, ...hnResults, ...ghResults, ...soResults, ...redditResults, ...arxivResults);
 
   if (allResults.length === 0) {
     statusCallback('No results from any source');
+  } else {
+    statusCallback(`Found results from: ${activeSources.join(', ')}`);
   }
 
   return allResults;
@@ -1704,10 +1874,90 @@ function updateExportStats(): void {
   `;
 }
 
+function setupSettingsPanel(): void {
+  const settingsHeader = document.getElementById('settings-header');
+  const settingsContent = document.getElementById('settings-content');
+  const proxyUrlInput = document.getElementById('proxy-url') as HTMLInputElement;
+  const enableProxySourcesCheckbox = document.getElementById('enable-proxy-sources') as HTMLInputElement;
+  const enableBraveApiCheckbox = document.getElementById('enable-brave-api') as HTMLInputElement;
+  const enableSerpApiCheckbox = document.getElementById('enable-serp-api') as HTMLInputElement;
+  const saveSettingsBtn = document.getElementById('save-settings-btn');
+  const resetSettingsBtn = document.getElementById('reset-settings-btn');
+
+  if (!settingsHeader || !settingsContent) return;
+
+  // Toggle settings panel visibility
+  settingsHeader.addEventListener('click', () => {
+    settingsContent.classList.toggle('show');
+    const toggle = settingsHeader.querySelector('.settings-toggle');
+    if (toggle) {
+      toggle.textContent = settingsContent.classList.contains('show') ? 'Click to collapse' : 'Click to configure';
+    }
+  });
+
+  // Load current settings into UI
+  function loadSettingsToUI(): void {
+    const settings = getSettings();
+    if (proxyUrlInput) proxyUrlInput.value = settings.proxyUrl;
+    if (enableProxySourcesCheckbox) enableProxySourcesCheckbox.checked = settings.enableProxySources;
+    if (enableBraveApiCheckbox) enableBraveApiCheckbox.checked = settings.enableBraveApi;
+    if (enableSerpApiCheckbox) enableSerpApiCheckbox.checked = settings.enableSerpApi;
+
+    // Update toggle text to show if proxy is configured
+    const toggle = settingsHeader.querySelector('.settings-toggle');
+    if (toggle) {
+      if (settings.proxyUrl) {
+        toggle.textContent = 'Proxy configured';
+        (toggle as HTMLElement).style.color = 'var(--success)';
+      } else {
+        toggle.textContent = 'Click to configure';
+        (toggle as HTMLElement).style.color = '';
+      }
+    }
+  }
+
+  // Save settings from UI
+  if (saveSettingsBtn) {
+    saveSettingsBtn.addEventListener('click', () => {
+      const newSettings: RscoutSettings = {
+        proxyUrl: proxyUrlInput?.value.trim() || '',
+        enableProxySources: enableProxySourcesCheckbox?.checked || false,
+        enableBraveApi: enableBraveApiCheckbox?.checked || false,
+        enableSerpApi: enableSerpApiCheckbox?.checked || false,
+      };
+
+      // Validate proxy URL if any proxy features are enabled
+      if ((newSettings.enableProxySources || newSettings.enableBraveApi || newSettings.enableSerpApi) && !newSettings.proxyUrl) {
+        showToast('Please enter a proxy URL to enable these sources');
+        return;
+      }
+
+      saveSettings(newSettings);
+      loadSettingsToUI();
+      showToast('Settings saved');
+    });
+  }
+
+  // Reset settings
+  if (resetSettingsBtn) {
+    resetSettingsBtn.addEventListener('click', () => {
+      if (confirm('Reset all settings to defaults?')) {
+        saveSettings(getDefaultSettings());
+        loadSettingsToUI();
+        showToast('Settings reset to defaults');
+      }
+    });
+  }
+
+  // Initial load
+  loadSettingsToUI();
+}
+
 // Initialize app
 const hasSharedState = initializeFromURL();
 setupSharePanel();
 setupSavedResultsPanel();
+setupSettingsPanel();
 
 if (!hasSharedState) {
   setStatus('Ready to search', 'ready');

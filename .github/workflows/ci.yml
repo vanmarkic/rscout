@@ -37,3 +37,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Run integration test (DuckDuckGo search)
+        run: pnpm rscout search "TypeScript" --limit 5 --format json --no-cache

@@ -1,6 +1,8 @@
 # rscout - Resource Scout
 
-A lightweight, no-AI web resource finder and aggregator CLI tool. Query multiple search APIs, aggregate results, deduplicate, and output clean Markdown files compatible with Obsidian.
+A lightweight, no-AI web resource finder and aggregator. Available as both a **CLI tool** and a **browser app**.
+
+> **🌐 [Try it in your browser](https://vanmarkic.github.io/rscout/)** - No installation required, runs 100% client-side
 
 ## Features
 
@@ -321,6 +323,30 @@ rscout/
 3. **Score**: Calculate relevance scores
 4. **Categorize**: Apply rule-based categorization
 5. **Output**: Generate Markdown or JSON
+
+## Web Version
+
+rscout also runs entirely in the browser with no backend required.
+
+**Features:**
+- BM25 and TF-IDF scoring (pure JS)
+- Local AI embeddings (all-MiniLM-L6-v2 via Transformers.js)
+- Query refinement suggestions
+- Dark mode UI
+
+**Try it:** [https://vanmarkic.github.io/rscout/](https://vanmarkic.github.io/rscout/)
+
+**Run locally:**
+```bash
+cd web
+pnpm install
+pnpm dev
+```
+
+**Deploy your own:**
+1. Fork this repository
+2. Enable GitHub Pages in Settings → Pages → Source: GitHub Actions
+3. Push to main branch - it will auto-deploy
 
 ## License
 

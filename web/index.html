@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rscout - Resource Scout</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-secondary: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79c0ff;
+      --success: #3fb950;
+      --warning: #d29922;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .search-box {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    button {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .options {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .option label {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    select {
+      padding: 0.4rem 0.6rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+
+    .status.loading {
+      border-left: 3px solid var(--warning);
+    }
+
+    .status.ready {
+      border-left: 3px solid var(--success);
+    }
+
+    .status.error {
+      border-left: 3px solid #f85149;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .results {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .result-card {
+      padding: 1rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: border-color 0.2s;
+    }
+
+    .result-card:hover {
+      border-color: var(--accent);
+    }
+
+    .result-title {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .result-title a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .result-title a:hover {
+      text-decoration: underline;
+    }
+
+    .result-snippet {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .result-meta {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .result-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .score-bar {
+      display: inline-block;
+      width: 60px;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .score-fill {
+      height: 100%;
+      background: var(--success);
+      transition: width 0.3s;
+    }
+
+    .suggestions {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .suggestions h3 {
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .suggestion-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .chip {
+      padding: 0.4rem 0.8rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-muted);
+    }
+
+    .footer {
+      margin-top: 3rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    @media (max-width: 600px) {
+      .search-box {
+        flex-direction: column;
+      }
+
+      .options {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔍 rscout</h1>
+      <p class="subtitle">Lightweight web resource aggregator - runs entirely in your browser</p>
+    </header>
+
+    <div class="search-box">
+      <input type="text" id="query" placeholder="Search for resources..." autofocus>
+      <button id="search-btn">Search</button>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <label for="limit">Results:</label>
+        <select id="limit">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+        </select>
+      </div>
+      <div class="option">
+        <label for="scoring">Scoring:</label>
+        <select id="scoring">
+          <option value="bm25">BM25</option>
+          <option value="tfidf">TF-IDF</option>
+          <option value="semantic">Semantic (AI)</option>
+        </select>
+      </div>
+      <div class="option">
+        <label>
+          <input type="checkbox" id="use-embeddings"> Use local AI embeddings
+        </label>
+      </div>
+    </div>
+
+    <div id="status" class="status ready">
+      <span>✓</span> Ready to search
+    </div>
+
+    <div id="results" class="results">
+      <div class="empty-state">
+        <p>Enter a search query to find resources</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+          All processing happens locally in your browser - no data sent to servers
+        </p>
+      </div>
+    </div>
+
+    <div id="suggestions" class="suggestions" style="display: none;">
+      <h3>Refine your search</h3>
+      <div class="suggestion-chips" id="suggestion-chips"></div>
+    </div>
+
+    <footer class="footer">
+      <p>
+        Powered by <a href="https://github.com/vanmarkic/rscout" target="_blank">rscout</a> |
+        Embeddings by <a href="https://huggingface.co/Xenova/all-MiniLM-L6-v2" target="_blank">all-MiniLM-L6-v2</a>
+      </p>
+      <p style="margin-top: 0.5rem;">100% client-side • No API keys required • Free forever</p>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

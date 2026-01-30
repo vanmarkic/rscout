@@ -1,0 +1,35 @@
+---
+title: "{{query}}"
+date: {{date}}
+tags: [{{tags}}]
+sources: [{{providers}}]
+total_results: {{totalResults}}
+generated_by: rscout
+---
+
+# {{query}}
+
+> **Summary**
+> - **Query**: {{query}}
+> - **Results**: {{totalResults}} results
+> - **Generated**: {{timestamp}}
+
+{{#each results}}
+## [{{title}}]({{url}})
+
+{{snippet}}
+
+*Score: {{score}}% | Source: {{source}} | Domain: {{domain}}*
+{{#if categories}}
+*Categories: {{categories}}*
+{{/if}}
+
+---
+
+{{/each}}
+
+## Related
+
+{{#each groupedByDomain}}
+- [[{{@key}}]]
+{{/each}}

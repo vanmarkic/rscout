@@ -1,0 +1,48 @@
+{
+  "name": "rscout",
+  "version": "1.0.0",
+  "description": "Resource Scout - A lightweight web resource finder and aggregator CLI tool",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "rscout": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "rscout": "tsx src/index.ts"
+  },
+  "keywords": [
+    "search",
+    "aggregator",
+    "cli",
+    "obsidian",
+    "markdown",
+    "rss"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "zod": "^3.23.0",
+    "yaml": "^2.4.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "p-limit": "^5.0.0",
+    "p-retry": "^6.2.0",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^1.5.0",
+    "tsx": "^4.7.0"
+  }
+}

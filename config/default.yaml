@@ -1,0 +1,66 @@
+# rscout - Resource Scout Configuration
+# Copy this to config/local.yaml and customize with your API keys
+
+providers:
+  brave:
+    enabled: false  # Set to true and add API key to enable
+    apiKey: ${BRAVE_API_KEY}  # Get from https://brave.com/search/api/
+    rateLimit: 1  # requests per second
+
+  duckduckgo:
+    enabled: true  # No API key needed
+    rateLimit: 0.5  # requests per second
+
+  rss:
+    enabled: true
+    rateLimit: 1
+    feeds: []
+      # Add your RSS feeds here:
+      # - https://example.com/feed.xml
+      # - https://blog.example.com/rss
+
+  serp:
+    enabled: false  # Set to true and add API key to enable
+    apiKey: ${SERP_API_KEY}  # Get from https://serpapi.com/
+    rateLimit: 1
+
+search:
+  defaultLimit: 20  # Maximum results per search
+  timeout: 10000    # Request timeout in milliseconds
+  retries: 2        # Number of retries on failure
+
+scoring:
+  weights:
+    recency: 0.3           # Weight for how recent the content is
+    domainAuthority: 0.2   # Weight for trusted domains
+    keywordRelevance: 0.5  # Weight for query term matching
+  trustedDomains:
+    - wikipedia.org
+    - github.com
+    - developer.mozilla.org
+    - stackoverflow.com
+    - docs.microsoft.com
+    - cloud.google.com
+    - aws.amazon.com
+
+deduplication:
+  urlNormalization: true      # Normalize URLs to detect duplicates
+  contentFingerprint: true    # Use content fingerprinting
+  similarityThreshold: 0.85   # Threshold for similar content detection
+
+output:
+  format: markdown    # Default output format: markdown or json
+  directory: ./output # Default output directory
+  template: obsidian  # Template to use
+  obsidian:
+    vault: ~/Documents/Obsidian/Main  # Path to your Obsidian vault (optional)
+    folder: Resources/Aggregated       # Folder within vault for outputs
+    tags:
+      - rscout
+      - auto-aggregated
+    frontmatter: true  # Include YAML frontmatter in markdown
+
+cache:
+  enabled: true
+  directory: ./.rscout-cache
+  ttlMs: 3600000  # 1 hour cache TTL

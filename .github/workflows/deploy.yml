@@ -1,11 +1,18 @@
 name: Deploy to GitHub Pages
 
 on:
+  # Trigger on main/master for production
   push:
     branches:
       - main
       - master
+  # Manual trigger for any branch
   workflow_dispatch:
+    inputs:
+      deploy_branch:
+        description: 'Branch to deploy (leave empty for current)'
+        required: false
+        default: ''
 
 permissions:
   contents: read

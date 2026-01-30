@@ -124,7 +124,6 @@ async function loadEmbeddingModel(statusCallback: (msg: string) => void): Promis
   statusCallback('Loading AI model (all-MiniLM-L6-v2, ~23MB)...');
 
   try {
-    // Dynamic import of Transformers.js
     const { pipeline } = await import('@xenova/transformers');
     embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
       quantized: true,
@@ -186,37 +185,118 @@ async function semanticScore(
 }
 
 // ============================================
-// Search via CORS Proxy
+// Search APIs (Multiple sources for reliability)
 // ============================================
 
+// SearXNG public instances with JSON API
+const SEARXNG_INSTANCES = [
+  'https://searx.be',
+  'https://search.bus-hit.me',
+  'https://searx.tiekoetter.com',
+  'https://search.ononoki.org',
+];
+
+// CORS proxies for fallback
 const CORS_PROXIES = [
   'https://api.allorigins.win/raw?url=',
   'https://corsproxy.io/?',
+  'https://api.codetabs.com/v1/proxy?quest=',
 ];
 
-async function fetchWithCORS(url: string): Promise<Response> {
-  // Try direct fetch first (might work for some APIs)
+async function fetchWithCORS(url: string, options: RequestInit = {}): Promise<Response> {
+  // Try direct fetch first
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { ...options, mode: 'cors' });
     if (response.ok) return response;
-  } catch {
-    // Continue to try proxies
+  } catch (e) {
+    console.log('Direct fetch failed, trying proxies...', e);
   }
 
   // Try CORS proxies
   for (const proxy of CORS_PROXIES) {
     try {
-      const response = await fetch(proxy + encodeURIComponent(url));
+      const proxyUrl = proxy + encodeURIComponent(url);
+      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
       if (response.ok) return response;
-    } catch {
+    } catch (e) {
+      console.log(`Proxy ${proxy} failed`, e);
       continue;
     }
   }
 
-  throw new Error('All CORS proxies failed');
+  throw new Error('All fetch attempts failed');
 }
 
-async function searchDuckDuckGo(query: string, limit: number): Promise<SearchResult[]> {
+// Search using SearXNG (metasearch engine with JSON API)
+async function searchSearXNG(query: string, limit: number): Promise<SearchResult[]> {
+  for (const instance of SEARXNG_INSTANCES) {
+    try {
+      const url = `${instance}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
+      const response = await fetchWithCORS(url);
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0) {
+        return data.results.slice(0, limit).map((r: any) => ({
+          url: r.url,
+          title: r.title || 'Untitled',
+          snippet: r.content || r.snippet || '',
+          source: 'searxng',
+          timestamp: new Date(),
+        }));
+      }
+    } catch (e) {
+      console.log(`SearXNG instance ${instance} failed`, e);
+      continue;
+    }
+  }
+
+  return [];
+}
+
+// Search using DuckDuckGo HTML (scraping approach)
+async function searchDuckDuckGoHTML(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    // DuckDuckGo lite version is simpler to parse
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+    const response = await fetchWithCORS(url);
+    const html = await response.text();
+
+    const results: SearchResult[] = [];
+
+    // Parse the lite HTML - results are in table rows
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Find result links (they have class "result-link" in lite version)
+    const links = doc.querySelectorAll('a.result-link');
+    const snippets = doc.querySelectorAll('td.result-snippet');
+
+    links.forEach((link, i) => {
+      if (results.length >= limit) return;
+
+      const href = link.getAttribute('href');
+      const title = link.textContent?.trim();
+
+      if (href && title && !href.startsWith('/')) {
+        results.push({
+          url: href,
+          title,
+          snippet: snippets[i]?.textContent?.trim() || '',
+          source: 'duckduckgo',
+          timestamp: new Date(),
+        });
+      }
+    });
+
+    return results;
+  } catch (e) {
+    console.log('DuckDuckGo HTML search failed', e);
+    return [];
+  }
+}
+
+// Search using DuckDuckGo Instant Answer API (for instant answers)
+async function searchDuckDuckGoAPI(query: string, limit: number): Promise<SearchResult[]> {
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
 
   try {
@@ -229,7 +309,7 @@ async function searchDuckDuckGo(query: string, limit: number): Promise<SearchRes
     if (data.AbstractURL && data.AbstractText) {
       results.push({
         url: data.AbstractURL,
-        title: data.Heading || 'DuckDuckGo Result',
+        title: data.Heading || 'Wikipedia',
         snippet: data.AbstractText,
         source: 'duckduckgo',
         timestamp: new Date(),
@@ -251,34 +331,70 @@ async function searchDuckDuckGo(query: string, limit: number): Promise<SearchRes
             timestamp: new Date(),
           });
         }
+
+        // Handle nested topics
+        if (topic.Topics) {
+          for (const subtopic of topic.Topics) {
+            if (results.length >= limit) break;
+            if (subtopic.FirstURL && subtopic.Text) {
+              results.push({
+                url: subtopic.FirstURL,
+                title: subtopic.Text.slice(0, 60),
+                snippet: subtopic.Text,
+                source: 'duckduckgo',
+                timestamp: new Date(),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Results (direct answers)
+    if (data.Results) {
+      for (const result of data.Results) {
+        if (results.length >= limit) break;
+        if (result.FirstURL && result.Text) {
+          results.push({
+            url: result.FirstURL,
+            title: result.Text.slice(0, 60),
+            snippet: result.Text,
+            source: 'duckduckgo',
+            timestamp: new Date(),
+          });
+        }
       }
     }
 
     return results.slice(0, limit);
-  } catch (error) {
-    console.error('DuckDuckGo search failed:', error);
+  } catch (e) {
+    console.log('DuckDuckGo API failed', e);
     return [];
   }
 }
 
-// Alternative: Use Jina Reader for content extraction (has CORS support)
-async function fetchWithJina(url: string): Promise<{ title: string; content: string } | null> {
-  try {
-    const jinaUrl = `https://r.jina.ai/${url}`;
-    const response = await fetch(jinaUrl, {
-      headers: { Accept: 'application/json' },
-    });
+// Main search function - tries multiple sources
+async function search(query: string, limit: number, statusCallback: (msg: string) => void): Promise<SearchResult[]> {
+  statusCallback('Searching SearXNG...');
 
-    if (!response.ok) return null;
+  // Try SearXNG first (best results)
+  let results = await searchSearXNG(query, limit * 2);
 
-    const data = await response.json();
-    return {
-      title: data.data?.title || '',
-      content: data.data?.content || '',
-    };
-  } catch {
-    return null;
+  if (results.length === 0) {
+    statusCallback('Trying DuckDuckGo...');
+    results = await searchDuckDuckGoHTML(query, limit * 2);
   }
+
+  if (results.length === 0) {
+    statusCallback('Trying DuckDuckGo API...');
+    results = await searchDuckDuckGoAPI(query, limit * 2);
+  }
+
+  if (results.length === 0) {
+    statusCallback('No results from any source');
+  }
+
+  return results;
 }
 
 // ============================================
@@ -347,18 +463,22 @@ function renderResults(results: SearchResult[]): void {
     resultsDiv.innerHTML = `
       <div class="empty-state">
         <p>No results found</p>
-        <p style="margin-top: 0.5rem; font-size: 0.85rem;">Try a different search term</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">Try a different search term or check your connection</p>
       </div>
     `;
     return;
   }
 
-  const maxScore = Math.max(...results.map((r) => r.score ?? r.bm25Score ?? r.similarity ?? 0), 1);
+  const maxScore = Math.max(...results.map((r) => r.score ?? r.bm25Score ?? r.similarity ?? 0), 0.01);
 
-  resultsDiv.innerHTML = results.map((result, i) => {
+  resultsDiv.innerHTML = results.map((result) => {
     const score = result.score ?? result.bm25Score ?? result.similarity ?? 0;
     const normalizedScore = (score / maxScore) * 100;
-    const domain = new URL(result.url).hostname.replace('www.', '');
+
+    let domain = 'unknown';
+    try {
+      domain = new URL(result.url).hostname.replace('www.', '');
+    } catch {}
 
     return `
       <div class="result-card">
@@ -390,7 +510,6 @@ function renderSuggestions(suggestions: string[], query: string): void {
     <span class="chip" data-term="${term}">${term}</span>
   `).join('');
 
-  // Add click handlers
   suggestionChipsDiv.querySelectorAll('.chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const term = (chip as HTMLElement).dataset.term;
@@ -412,11 +531,11 @@ async function performSearch(): Promise<void> {
   setStatus('Searching...', 'loading');
 
   try {
-    // Fetch results
-    let results = await searchDuckDuckGo(query, limit * 2); // Fetch more for better ranking
+    // Fetch results from multiple sources
+    let results = await search(query, limit * 2, setStatus);
 
     if (results.length === 0) {
-      setStatus('No results found', 'ready');
+      setStatus('No results found', 'error');
       renderResults([]);
       suggestionsDiv.style.display = 'none';
       return;
@@ -435,8 +554,13 @@ async function performSearch(): Promise<void> {
       results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     }
 
-    // Limit results
-    results = results.slice(0, limit);
+    // Limit and deduplicate
+    const seenUrls = new Set<string>();
+    results = results.filter((r) => {
+      if (seenUrls.has(r.url)) return false;
+      seenUrls.add(r.url);
+      return true;
+    }).slice(0, limit);
 
     // Extract suggestions
     const suggestions = extractSuggestions(results, query);
@@ -458,7 +582,6 @@ queryInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') performSearch();
 });
 
-// Pre-load embedding model if checkbox is checked
 useEmbeddingsCheckbox.addEventListener('change', () => {
   if (useEmbeddingsCheckbox.checked && !embeddingPipeline && !isLoadingModel) {
     loadEmbeddingModel(setStatus).catch(() => {

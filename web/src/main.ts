@@ -373,28 +373,210 @@ async function searchDuckDuckGoAPI(query: string, limit: number): Promise<Search
   }
 }
 
+// ============================================
+// Additional CORS-Friendly APIs (No proxy needed!)
+// ============================================
+
+// Wikipedia API - Always works, unlimited, CORS-friendly
+async function searchWikipedia(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=${limit}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.query?.search) {
+      return data.query.search.map((r: any) => ({
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
+        title: r.title,
+        snippet: r.snippet.replace(/<[^>]*>/g, ''), // Strip HTML
+        source: 'wikipedia',
+        timestamp: new Date(),
+      }));
+    }
+  } catch (e) {
+    console.log('Wikipedia search failed', e);
+  }
+  return [];
+}
+
+// Hacker News (Algolia) - Great for tech, CORS-friendly
+async function searchHackerNews(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&hitsPerPage=${limit}&tags=story`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.hits) {
+      return data.hits
+        .filter((r: any) => r.url) // Only items with URLs
+        .map((r: any) => ({
+          url: r.url || `https://news.ycombinator.com/item?id=${r.objectID}`,
+          title: r.title || 'Untitled',
+          snippet: `${r.points || 0} points | ${r.num_comments || 0} comments | ${r.author || 'unknown'}`,
+          source: 'hackernews',
+          timestamp: new Date(r.created_at || Date.now()),
+        }));
+    }
+  } catch (e) {
+    console.log('Hacker News search failed', e);
+  }
+  return [];
+}
+
+// GitHub Search - Great for code/repos, CORS-friendly (rate limited: 10/min unauthenticated)
+async function searchGitHub(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=${limit}&sort=stars`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    const data = await response.json();
+
+    if (data.items) {
+      return data.items.map((r: any) => ({
+        url: r.html_url,
+        title: `${r.full_name} ⭐${r.stargazers_count}`,
+        snippet: r.description || 'No description',
+        source: 'github',
+        timestamp: new Date(r.updated_at || Date.now()),
+      }));
+    }
+  } catch (e) {
+    console.log('GitHub search failed', e);
+  }
+  return [];
+}
+
+// StackExchange API - Great for Q&A, CORS-friendly
+async function searchStackOverflow(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(query)}&site=stackoverflow&pagesize=${limit}&filter=!nNPvSNdWme`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.items) {
+      return data.items.map((r: any) => ({
+        url: r.link,
+        title: decodeHtmlEntities(r.title),
+        snippet: `Score: ${r.score} | Answers: ${r.answer_count} | Views: ${r.view_count}`,
+        source: 'stackoverflow',
+        timestamp: new Date(r.creation_date * 1000),
+      }));
+    }
+  } catch (e) {
+    console.log('StackOverflow search failed', e);
+  }
+  return [];
+}
+
+// Reddit JSON - Add .json to any reddit search URL
+async function searchReddit(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=${limit}&sort=relevance`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.data?.children) {
+      return data.data.children
+        .filter((r: any) => r.data)
+        .map((r: any) => ({
+          url: `https://reddit.com${r.data.permalink}`,
+          title: r.data.title,
+          snippet: `r/${r.data.subreddit} | ⬆${r.data.ups} | ${r.data.num_comments} comments`,
+          source: 'reddit',
+          timestamp: new Date(r.data.created_utc * 1000),
+        }));
+    }
+  } catch (e) {
+    console.log('Reddit search failed', e);
+  }
+  return [];
+}
+
+// arXiv API - Academic papers, CORS-friendly
+async function searchArxiv(query: string, limit: number): Promise<SearchResult[]> {
+  try {
+    const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=${limit}`;
+    const response = await fetch(url);
+    const xml = await response.text();
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'text/xml');
+    const entries = doc.querySelectorAll('entry');
+
+    const results: SearchResult[] = [];
+    entries.forEach((entry) => {
+      const title = entry.querySelector('title')?.textContent?.trim() || '';
+      const summary = entry.querySelector('summary')?.textContent?.trim() || '';
+      const link = entry.querySelector('id')?.textContent || '';
+      const published = entry.querySelector('published')?.textContent || '';
+
+      if (title && link) {
+        results.push({
+          url: link,
+          title,
+          snippet: summary.slice(0, 200) + (summary.length > 200 ? '...' : ''),
+          source: 'arxiv',
+          timestamp: new Date(published),
+        });
+      }
+    });
+
+    return results;
+  } catch (e) {
+    console.log('arXiv search failed', e);
+  }
+  return [];
+}
+
+// Helper to decode HTML entities
+function decodeHtmlEntities(text: string): string {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+}
+
 // Main search function - tries multiple sources
 async function search(query: string, limit: number, statusCallback: (msg: string) => void): Promise<SearchResult[]> {
+  const allResults: SearchResult[] = [];
+
+  // Try SearXNG first (best general results)
   statusCallback('Searching SearXNG...');
+  let results = await searchSearXNG(query, limit);
+  if (results.length > 0) {
+    allResults.push(...results);
+  }
 
-  // Try SearXNG first (best results)
-  let results = await searchSearXNG(query, limit * 2);
-
-  if (results.length === 0) {
+  // If SearXNG failed, try DuckDuckGo
+  if (allResults.length === 0) {
     statusCallback('Trying DuckDuckGo...');
-    results = await searchDuckDuckGoHTML(query, limit * 2);
+    results = await searchDuckDuckGoHTML(query, limit);
+    allResults.push(...results);
   }
 
-  if (results.length === 0) {
+  if (allResults.length === 0) {
     statusCallback('Trying DuckDuckGo API...');
-    results = await searchDuckDuckGoAPI(query, limit * 2);
+    results = await searchDuckDuckGoAPI(query, limit);
+    allResults.push(...results);
   }
 
-  if (results.length === 0) {
+  // Always add results from CORS-friendly APIs in parallel
+  statusCallback('Searching Wikipedia, HN, GitHub...');
+  const [wikiResults, hnResults, ghResults, soResults, redditResults] = await Promise.all([
+    searchWikipedia(query, Math.min(limit, 5)),
+    searchHackerNews(query, Math.min(limit, 5)),
+    searchGitHub(query, Math.min(limit, 5)),
+    searchStackOverflow(query, Math.min(limit, 5)),
+    searchReddit(query, Math.min(limit, 5)),
+  ]);
+
+  allResults.push(...wikiResults, ...hnResults, ...ghResults, ...soResults, ...redditResults);
+
+  if (allResults.length === 0) {
     statusCallback('No results from any source');
   }
 
-  return results;
+  return allResults;
 }
 
 // ============================================
